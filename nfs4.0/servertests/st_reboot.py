@@ -313,4 +313,87 @@ def testGraceSeqid(t, env):
     res = c.open_file(t.code)
     check(res, NFS4_OK, "OPEN after grace period")
      
+def testShareReclaim1(t, env):
+    """REBOOT with valid CLAIM_PREVIOUS
+
+    FLAGS: share_reclaim
+    DEPEND: MKFILE
+    CODE: SHAREREC1
+    """
+    c = env.c1
+    c.init_connection()
+    fh, stateid = c.create_confirm(t.code, access=OPEN4_SHARE_ACCESS_READ)
+    sleeptime = _waitForReboot(c, env)
+    try:
+        c.init_connection()
+        res = c.open_file(t.code, fh, access=OPEN4_SHARE_ACCESS_READ,
+                          claim_type=CLAIM_PREVIOUS,
+                          deleg_type=OPEN_DELEGATE_NONE)
+        check(res, NFS4_OK, "Reclaim with the same access")
+    finally:
+        env.sleep(10, "Waiting for 10 seconds")
+
+def testShareReclaim2(t, env):
+    """REBOOT with valid CLAIM_PREVIOUS
+
+    FLAGS: share_reclaim
+    DEPEND: MKFILE
+    CODE: SHAREREC2
+    """
+    c = env.c1
+    c.init_connection()
+    fh, stateid = c.create_confirm(t.code, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+    sleeptime = _waitForReboot(c, env)
+    try:
+        c.init_connection()
+        res = c.open_file(t.code, fh, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ,
+                          claim_type=CLAIM_PREVIOUS,
+                          deleg_type=OPEN_DELEGATE_NONE)
+        check(res, NFS4_OK, "Reclaim with the same access and deny")
+    finally:
+        env.sleep(10, "Waiting for 10 seconds")
+
+def testShareReclaim3(t, env):
+    """REBOOT with invalid CLAIM_PREVIOUS
+
+    FLAGS: share_reclaim
+    DEPEND: MKFILE
+    CODE: SHAREREC3
+    """
+    c = env.c1
+    c.init_connection()
+    fh, stateid = c.create_confirm(t.code, access=OPEN4_SHARE_ACCESS_READ)
+    sleeptime = _waitForReboot(c, env)
+    try:
+        c.init_connection()
+        res = c.open_file(t.code, fh, access=OPEN4_SHARE_ACCESS_WRITE,
+                          claim_type=CLAIM_PREVIOUS,
+                          deleg_type=OPEN_DELEGATE_NONE)
+        check(res, NFS4ERR_RECLAIM_CONFLICT,
+              "Reclaim with the different access",
+              [NFS4ERR_RECLAIM_BAD])
+    finally:
+        env.sleep(10, "Waiting for 10 seconds")
     
+def testShareReclaim4(t, env):
+    """REBOOT with invalid CLAIM_PREVIOUS
+
+    FLAGS: share_reclaim
+    DEPEND: MKFILE
+    CODE: SHAREREC4
+    """
+    c = env.c1
+    c.init_connection()
+    fh, stateid = c.create_confirm(t.code, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+    sleeptime = _waitForReboot(c, env)
+    try:
+        c.init_connection()
+        res = c.open_file(t.code, fh, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE,
+                          claim_type=CLAIM_PREVIOUS,
+                          deleg_type=OPEN_DELEGATE_NONE)
+        check(res, NFS4ERR_RECLAIM_CONFLICT,
+              "Reclaim with the different deny",
+              [NFS4ERR_RECLAIM_BAD])
+    finally:
+        env.sleep(10, "Waiting for 10 seconds")
+ 

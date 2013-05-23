@@ -1,6 +1,31 @@
 from nfs4_const import *
 from environment import check, checklist, checkdict, get_invalid_utf8strings
 from nfs4lib import get_bitnumattr_dict
+import time
+import os
+
+def _informFileOpened(c, env):
+    """Inform the master script that file is opened.
+    """
+    env.fifohelper("open y")
+
+def _waitForNextStep(c, env):
+    """Waits for  master script to signal go ahead.
+    """
+    env.fifohelper("wait")
+
+def _waitForOtherClient(c, env):
+    """Wait for server to reboot.
+
+    Returns an estimate of how long grace period will last.
+    """
+    env.serverhelper("execute multiclient test")
+    # Wait until the server is back up.
+    # c.null() blocks until it gets a response,
+    # which happens when the server comes back up.
+    c.null()
+    return 1
+
 
 # Any test that uses create_confirm should depend on this test
 def testOpen(t, env):
@@ -633,3 +658,3221 @@ def testBadSeqid(t, env):
     c.seqid[owner] += 1
     res = c.open_file(owner, file, deny=OPEN4_SHARE_DENY_BOTH)
     check(res, NFS4ERR_BAD_SEQID)
+
+# Current ACCESS=READ, DENY=NONE
+def testShareUnit1(t, env):
+    """OPEN conflicting with previous share
+        FLAGS: all share
+        DEPEND: MKFILE
+        CODE: SHARE1
+        """
+    c = env.c1
+    c.init_connection()
+    file = c.homedir + [t.code]
+    fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+
+    res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+    check(res, NFS4_OK,
+              "Trying to open a file with access=%s, deny=%s "
+              "that was already opened with access=READ, deny=NONE" % ('READ', 'NONE'))
+    res = c.close_file(t.code, fh, stateid)
+    check(res, msg="CLOSE a file")
+
+def testShareUnit2(t, env):
+    """OPEN conflicting with previous share
+        FLAGS: all share
+        DEPEND: MKFILE
+        CODE: SHARE2
+        """
+    c = env.c1
+    c.init_connection()
+    file = c.homedir + [t.code]
+    fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+
+    res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+    check(res, NFS4ERR_SHARE_DENIED,
+              "Trying to open a file with access=%s, deny=%s "
+              "that was already opened with access=READ, deny=NONE" % ('READ', 'READ'))                
+    res = c.close_file(t.code, fh, stateid)
+    check(res, msg="CLOSE a file")
+
+def testShareUnit3(t, env):
+    """OPEN conflicting with previous share
+        FLAGS: all share
+        DEPEND: MKFILE
+        CODE: SHARE3
+        """
+    c = env.c1
+    c.init_connection()
+    file = c.homedir + [t.code]
+    fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+
+    res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+    check(res, NFS4_OK,
+              "Trying to open a file with access=%s, deny=%s "
+              "that was already opened with access=READ, deny=NONE" % ('READ', 'WRITE'))                
+    res = c.close_file(t.code, fh, stateid)
+    check(res, msg="CLOSE a file")
+
+def testShareUnit4(t, env):
+    """OPEN conflicting with previous share
+        FLAGS: all share
+        DEPEND: MKFILE
+        CODE: SHARE4
+        """
+    c = env.c1
+    c.init_connection()
+    file = c.homedir + [t.code]
+    fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+    
+    res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+    check(res, NFS4ERR_SHARE_DENIED,
+          "Trying to open a file with access=%s, deny=%s "
+          "that was already opened with access=READ, deny=NONE" % ('READ', 'BOTH'))             
+    res = c.close_file(t.code, fh, stateid)
+    check(res, msg="CLOSE a file")
+
+def testShareUnit5(t, env):
+    """OPEN conflicting with previous share
+        FLAGS: all share
+        DEPEND: MKFILE
+        CODE: SHARE5
+        """
+    c = env.c1
+    c.init_connection()
+    file = c.homedir + [t.code]
+    fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+    
+    res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+    check(res, NFS4_OK,
+          "Trying to open a file with access=%s, deny=%s "
+          "that was already opened with access=READ, deny=NONE" % ('WRITE', 'NONE'))             
+    res = c.close_file(t.code, fh, stateid)
+    check(res, msg="CLOSE a file")
+
+def testShareUnit6(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE6
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=NONE" % ('WRITE', 'READ'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit7(t, env):
+  """OPEN conflicting with previous share
+    FLAGS:share
+    DEPEND: MKFILE
+    CODE: SHARE7
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=NONE" % ('WRITE', 'WRITE'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit8(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE8
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=NONE" % ('WRITE', 'BOTH'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit9(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE9
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=NONE" % ('BOTH', 'NONE'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit10(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE10
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=NONE" % ('BOTH', 'READ'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit11(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE11
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=NONE" % ('BOTH', 'WRITE'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit12(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE12
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=NONE" % ('BOTH', 'BOTH'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=READ, DENY=READ
+def testShareUnit13(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE13
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('READ', 'NONE'))                
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit14(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE14
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('READ', 'READ'))                
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit15(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE15
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('READ', 'WRITE'))                
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit16(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE16
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('READ', 'BOTH'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit17(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE17
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('WRITE', 'NONE'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit18(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE18
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('WRITE', 'READ'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit19(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE19
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('WRITE', 'WRITE'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit20(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE20
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('WRITE', 'BOTH'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit21(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE21
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('BOTH', 'NONE'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit22(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE22
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('BOTH', 'READ'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit23(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE23
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('BOTH', 'WRITE'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit24(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE24
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=READ" % ('BOTH', 'BOTH'))             
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=READ, DENY=WRITE
+def testShareUnit25(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE25
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit26(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE26
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit27(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE27
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit28(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE28
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit29(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE29
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit30(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE30
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit31(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE31
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit32(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE32
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit33(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE33
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit34(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE34
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit35(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE35
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit36(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE36
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=WRITE" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=READ, DENY=BOTH
+def testShareUnit37(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE37
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit38(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE38
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit39(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE39
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit40(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE40
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit41(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE41
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit42(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE42
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit43(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE43
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit44(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE44
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit45(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE45
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit46(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE46
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit47(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE47
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit48(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE48
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=READ, deny=BOTH" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=WRITE, DENY=NONE
+def testShareUnit49(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE49
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit50(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE50
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit51(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE51
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit52(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE52
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit53(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE53
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit54(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE54
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit55(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE55
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit56(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE56
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit57(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE57
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit58(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE58
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit59(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE59
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit60(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE60
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=NONE" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=WRITE, DENY=READ
+def testShareUnit61(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE61
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit62(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE62
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit63(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE63
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit64(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE64
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit65(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE65
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit66(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE66
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit67(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE67
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit68(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE68
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit69(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE69
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit70(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE70
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit71(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE71
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit72(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE72
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=READ" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=WRITE, DENY=WRITE
+def testShareUnit73(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE73
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit74(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE74
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit75(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE75
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit76(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE76
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit77(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE77
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit78(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE78
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit79(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE79
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit80(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE80
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit81(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE81
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit82(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE82
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit83(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE83
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit84(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE84
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=WRITE" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=WRITE, DENY=BOTH
+def testShareUnit85(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE85
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit86(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE86
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit87(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE87
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit88(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE88
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit89(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE89
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit90(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE90
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit91(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE91
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit92(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE92
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit93(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE93
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit94(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE94
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit95(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE95
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit96(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE96
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=WRITE, deny=BOTH" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=BOTH, DENY=NONE
+def testShareUnit97(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE97
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit98(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE98
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit99(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE99
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit100(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE100
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit101(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE101
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit102(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE102
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit103(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE103
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit104(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE104
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit105(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE105
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit106(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE106
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit107(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE107
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit108(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE108
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=NONE" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=BOTH, DENY=READ
+def testShareUnit109(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE109
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit110(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE110
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit111(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE111
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit112(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE112
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit113(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE113
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit114(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE114
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit115(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE115
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit116(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE116
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit117(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE117
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit118(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE118
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit119(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE119
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit120(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE120
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=READ" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=BOTH, DENY=WRITE
+def testShareUnit121(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE121
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit122(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE122
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit123(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE123
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit124(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE124
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit125(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE125
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit126(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE126
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit127(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE127
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit128(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE128
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit129(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE129
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit130(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE130
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit131(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE131
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit132(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE132
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=WRITE" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+# Current ACCESS=BOTH, DENY=BOTH
+def testShareUnit133(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE133
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('READ', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit134(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE134
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('READ', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit135(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE135
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('READ', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit136(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE136
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('READ', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit137(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE137
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('WRITE', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit138(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE138
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('WRITE', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit139(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE139
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('WRITE', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit140(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE140
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('WRITE', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit141(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE141
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('BOTH', 'NONE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit142(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE142
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('BOTH', 'READ'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit143(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE143
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('BOTH', 'WRITE'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit144(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: all share
+    DEPEND: MKFILE
+    CODE: SHARE144
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  check(res, NFS4ERR_SHARE_DENIED,
+        "Trying to open a file with access=%s, deny=%s "
+        "that was already opened with access=BOTH, deny=BOTH" % ('BOTH', 'BOTH'))
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit201(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: MKFILE
+    CODE: SHARE201
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit202(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi
+    DEPEND: MKFILE
+    CODE: SHARE202
+    """
+  c = env.c1
+  c.init_connection()
+  file = c.homedir + [t.code]
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  sleeptime = _waitForOtherClient(c, env)
+  env.sleep(sleeptime, "Waiting for %d seconds" % (sleeptime))
+
+def testShareUnit301(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi
+    DEPEND: MKFILE
+    CODE: SHARE301
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  sleeptime = _waitForOtherClient(c, env)
+  env.sleep(sleeptime, "Waiting for %d seconds" % (sleeptime))
+
+def testShareUnit302(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi
+    DEPEND: MKFILE
+    CODE: SHARE302
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  sleeptime = _waitForOtherClient(c, env)
+  env.sleep(sleeptime, "Waiting for %d seconds" % (sleeptime))
+
+def testShareUnit303(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi
+    DEPEND: MKFILE
+    CODE: SHARE303
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  sleeptime = _waitForOtherClient(c, env)
+  env.sleep(sleeptime, "Waiting for %d seconds" % (sleeptime))
+
+def testShareUnit304(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi
+    DEPEND: MKFILE
+    CODE: SHARE304
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  sleeptime = _waitForOtherClient(c, env)
+  env.sleep(sleeptime, "Waiting for %d seconds" % (sleeptime))
+
+def testShareUnit305(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi
+    DEPEND: MKFILE
+    CODE: SHARE305
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  fh, stateid = c.create_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  sleeptime = _waitForOtherClient(c, env)
+  env.sleep(sleeptime, "Waiting for %d seconds" % (sleeptime))
+
+def testShareUnit401(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE401
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s " % ('READ', 'NONE'))
+
+def testShareUnit402(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE402
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s " % ('WRITE', 'NONE'))
+
+def testShareUnit403(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE403
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s " % ('WRITE', 'WRITE'))
+
+def testShareUnit404(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE404
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  check(res, NFS4_OK,
+        "Trying to open a file with access=%s, deny=%s " % ('READ', 'READ'))
+
+def testShareUnit405(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE405
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  checklist(res, [NFS4ERR_SHARE_DENIED, NFS4ERR_ACCESS],
+        "Trying to open a file with access=%s, deny=%s " % ('READ', 'NONE'))
+
+def testShareUnit406(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE406
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  checklist(res, [NFS4ERR_SHARE_DENIED, NFS4ERR_ACCESS],
+        "Trying to open a file with access=%s, deny=%s " % ('WRITE', 'WRITE'))
+
+def testShareUnit407(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE407
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  checklist(res, [NFS4ERR_SHARE_DENIED, NFS4ERR_ACCESS],
+        "Trying to open a file with access=%s, deny=%s " % ('WRITE', 'NONE'))
+
+def testShareUnit408(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_multi2
+    DEPEND:
+    CODE: SHARE408
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['MULTISHARE']
+  file = c.homedir + a
+  
+  res = c.open_file('newowner', file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  checklist(res, [NFS4ERR_SHARE_DENIED, NFS4ERR_ACCESS],
+        "Trying to open a file with access=%s, deny=%s " % ('READ', 'READ'))
+
+def testShareUnit501(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE501
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit502(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE502
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit503(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE503
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit504(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE504
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit505(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE505
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit506(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE506
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit507(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE507
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit508(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE508
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit509(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE509
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit510(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE510
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit511(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE511
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit512(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE512
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit601(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE601
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_NONE)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit602(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE602
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_READ)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit603(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE603
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_WRITE)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit604(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE604
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_READ, deny=OPEN4_SHARE_DENY_BOTH)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit605(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE605
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_NONE)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit606(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE606
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_READ)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit607(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE607
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_WRITE)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit608(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE608
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_WRITE, deny=OPEN4_SHARE_DENY_BOTH)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit609(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE609
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_NONE)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit610(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE610
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_READ)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit611(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE611
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_WRITE)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
+def testShareUnit612(t, env):
+  """OPEN conflicting with previous share
+    FLAGS: share_release
+    DEPEND: 
+    CODE: SHARE612
+    """
+  c = env.c1
+  c.init_connection()
+  a = ['share_reservation_test_file']
+  file = env.opts.path[:-1] + a 
+   
+  fh, stateid = c.open_confirm(t.code, file, access=OPEN4_SHARE_ACCESS_BOTH, deny=OPEN4_SHARE_DENY_BOTH)
+  _informFileOpened(c, env)
+  _waitForNextStep(c, env)
+
+  res = c.close_file(t.code, fh, stateid)
+  check(res, msg="CLOSE a file")
+
