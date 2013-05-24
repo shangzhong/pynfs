@@ -199,6 +199,8 @@ class Environment(testmod.Environment):
         c = self.c1
         c.null()
         c.null()
+        sleeptime = c.getLeaseTime() + 10
+        self.sleep(sleeptime, "wait for any leases to expire before cleanup")
         c.clean_dir(self.opts.path)
 
     def startUp(self):
